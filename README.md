@@ -23,9 +23,6 @@ This repository contains the code and documentation for building a data engineer
 
 The final goal of this project is to combine both data sources into a unified dataset that powers dashboards for tracking vehicle positions, estimated arrival times, and on-time performance.
 
-Ah, I get it now. You want the steps to be within the markdown code block as well. Here's the corrected version with all the steps properly formatted in markdown:
-
-````markdown
 ## Git Workflow
 
 ### No Direct Pushes to `main`
