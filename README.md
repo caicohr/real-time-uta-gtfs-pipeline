@@ -23,6 +23,7 @@ This repository contains the code and documentation for building a data engineer
 
 The final goal of this project is to combine both data sources into a unified dataset that powers dashboards for tracking vehicle positions, estimated arrival times, and on-time performance.
 
+
 ## Git Workflow
 
 ### No Direct Pushes to `main`
@@ -72,7 +73,7 @@ git push origin feature/week-1-data-discovery
 * You should see a banner suggesting to create a pull request for the branch you've just pushed.
 * Click "Compare & pull request".
 * Fill out the pull request form with a meaningful title and description.
-* Select the base branch (usually `main`) and the compare branch (the feature branch you just pushed).
+* Select the base branch (`main`) and the compare branch (the feature branch you just pushed).
 * Click "Create pull request".
 
 ### 6. Merge and Cleanup
@@ -94,8 +95,3 @@ After merging, delete your feature branch locally and remotely:
   ```
 
 By following this workflow, we ensure a smooth collaboration process and keep our Git history organized.
-
-```
-
-Now, the entire section is properly formatted, including the numbered list. You can copy and paste this directly into your `README.md` file. Let me know if you need further changes!
-```
