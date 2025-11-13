@@ -1,0 +1,125 @@
+# =====================================================
+# OS & Editor Junk
+# =====================================================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Common temporary / backup files
+*.swp
+*.swo
+*.bak
+*.tmp
+*.log
+*.orig
+*.old
+
+# =====================================================
+# Python
+# =====================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+*.pdb
+
+# Virtual environments
+.env
+.venv/
+venv/
+env/
+ENV/
+
+# Package distribution / build artifacts
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# =====================================================
+# Jupyter / Data Science
+# =====================================================
+.ipynb_checkpoints/
+*.ipynb~
+# Local runtime data (Jupyter Lab)
+.jupyter/
+# Common data/output folders
+data/
+output/
+results/
+notebooks/.ipynb_checkpoints/
+
+# =====================================================
+# Docker
+# =====================================================
+# Docker build and config files
+**/.dockerignore
+**/Dockerfile~
+docker-compose.override.yml
+# Docker generated data
+tmp/
+logs/
+volume_data/
+
+# =====================================================
+# AWS / Cloud
+# =====================================================
+.aws/
+*.pem
+*.key
+*.crt
+*.pub
+# Terraform / CloudFormation
+.terraform/
+*.tfstate
+*.tfstate.backup
+terraform.tfvars
+
+# =====================================================
+# IDEs / Editors
+# =====================================================
+.vscode/
+.idea/
+*.code-workspace
+*.sublime-workspace
+*.sublime-project
+
+# =====================================================
+# Misc Project Files
+# =====================================================
+# Temporary / local data
+tmp/
+local/
+cache/
