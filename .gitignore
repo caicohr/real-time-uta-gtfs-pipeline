@@ -76,10 +76,40 @@ coverage.xml
 # Local runtime data (Jupyter Lab)
 .jupyter/
 # Common data/output folders
-data/
 output/
 results/
 notebooks/.ipynb_checkpoints/
+
+# =====================================================
+# Project Data & GTFS (Refined)
+# =====================================================
+# Ignore the ZIP file everywhere
+*.zip
+
+# Ignore the extracted GTFS text files specifically
+agency.txt
+routes.txt
+trips.txt
+stops.txt
+stop_times.txt
+calendar.txt
+calendar_dates.txt
+shapes.txt
+feed_info.txt
+
+# Ignore the contents of the data folder, but keep the folder itself
+# (Useful so your Docker mount points still exist for teammates)
+data/*
+!data/.gitkeep
+!data/GTFS/.gitkeep
+
+# =====================================================
+# DuckDB (Project Specific)
+# =====================================================
+*.duckdb
+*.db
+*.wal
+*.tmp
 
 # =====================================================
 # Docker
@@ -94,7 +124,7 @@ logs/
 volume_data/
 
 # =====================================================
-# AWS / Cloud
+# AWS / Cloud / Security
 # =====================================================
 .aws/
 *.pem
@@ -106,6 +136,13 @@ volume_data/
 *.tfstate
 *.tfstate.backup
 terraform.tfvars
+
+# Explicitly ignore common config files that might hold secrets
+config.py
+secrets.py
+aws_credentials
+credentials
+.s3cfg
 
 # =====================================================
 # IDEs / Editors
