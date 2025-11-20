@@ -99,34 +99,33 @@ We use an AWS Glue Crawler to automatically detect the schema of the raw CSV fil
 ## 4. Batch Transformation (AWS Athena)
 **SQL Source:** `sql/athena_transformation.sql`
 
-We use Athena Views to logically transform the raw CSV data into clean, typed datasets without moving files.
+We use **Athena Views** to logically transform the raw CSV data into clean, typed datasets. Unlike physical tables, Views calculate the transformation in real-time whenever queried, ensuring the data is always up-to-date with the latest ingestion.
 
 ### Step 4.1: Prepare S3 Output Location
 *Athena requires a specific S3 location to store query results and metadata.*
 
 1.  Navigate to the **S3 Console**.
 2.  Open your data lake bucket: `[YOUR_BUCKET_NAME]`.
-3.  Click **Create folder**.
-4.  Name it `athena-results`.
-5.  Click **Create folder**.
-    * *Note: You will point Athena to this folder in the next step.*
+3.  Create a folder named `athena-results`.
 
 ### Step 4.2: Setup Athena
 1.  Navigate to the **Athena Console**.
-2.  If prompted, go to **Settings** -> **Manage**.
-3.  **Query result location:** Enter `s3://[YOUR_BUCKET_NAME]/athena-results/`.
-    * *Ensure the trailing slash `/` is included.*
+2.  Go to **Settings** -> **Manage**.
+3.  **Query result location:** `s3://[YOUR_BUCKET_NAME]/athena-results/`.
 4.  Click **Save**.
 
 ### Step 4.3: Create Views
 1.  Open the Query Editor in Athena.
 2.  Copy the SQL queries from `sql/athena_transformation.sql`.
-3.  Run the queries (either all at once or block by block).
+3.  Run the queries (e.g., `CREATE OR REPLACE VIEW...`).
     * This creates the `uta_gtfs_clean` database.
-    * This creates Views (e.g., `uta_gtfs_clean.stops`) that automatically cast types and filter bad data.
+    * This establishes logical views (e.g., `uta_gtfs_clean.stops`) that automatically cast types and filter bad data.
 
 ### Step 4.4: Verification
-Run the following Data Quality check in Athena to ensure the pipeline is successful:
+Run the following Data Quality check in Athena. If this returns rows, it confirms that:
+1.  Ingestion (Lambda) worked.
+2.  Cataloging (Glue) worked.
+3.  Transformation (Views) is working.
 
 ```sql
 SELECT * FROM uta_gtfs_clean.stops 
