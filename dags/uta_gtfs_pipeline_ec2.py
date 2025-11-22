@@ -7,13 +7,10 @@ from datetime import timedelta
 # CONFIGURATION
 LAMBDA_FUNCTION_NAME = 'uta-gtfs-ingest'
 GLUE_CRAWLER_NAME = 'uta-gtfs-crawler'
-
-# MWAA runs in a specific region, but usually defaults correctly. 
-# If needed, hardcode 'us-east-1'
-AWS_REGION = 'us-east-1' 
+AWS_REGION = 'us-east-1'
 
 default_args = {
-    'owner': 'student',
+    'owner': 'ec2-user',
     'depends_on_past': False,
     'email_on_failure': False,
     'retries': 1,
@@ -23,13 +20,11 @@ default_args = {
 with DAG(
     'uta_gtfs_pipeline',
     default_args=default_args,
-    description='Daily GTFS Pipeline (MWAA)',
-    # MWAA supports the modern 'schedule' parameter
-    schedule='0 10 * * *',
-    # FIX: Use pendulum to avoid 'days_ago' error
+    description='Daily GTFS Pipeline running on EC2',
+    # SCHEDULE: 17:00 UTC = 10:00 AM MST (Utah)
+    schedule='0 17 * * *',
     start_date=pendulum.datetime(2025, 11, 1, tz="UTC"),
     catchup=False,
-    tags=['week1', 'mwaa'],
 ) as dag:
 
     # Step 1: Trigger Lambda
@@ -39,8 +34,7 @@ with DAG(
         invocation_type='RequestResponse',
         log_type='Tail',
         region_name=AWS_REGION,
-        # MWAA uses 'aws_default' to use the Execution Role attached to the environment
-        aws_conn_id='aws_default', 
+        aws_conn_id=None,
     )
 
     # Step 2: Trigger Crawler
@@ -48,7 +42,7 @@ with DAG(
         task_id='catalog_data',
         config={'Name': GLUE_CRAWLER_NAME},
         region_name=AWS_REGION,
-        aws_conn_id='aws_default',
+        aws_conn_id=None,
     )
 
     ingest_task >> crawler_task
