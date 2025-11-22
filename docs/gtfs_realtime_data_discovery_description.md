@@ -1,7 +1,8 @@
 # GTFS Realtime Data Discovery & Description
 
 **Project:** CS6830 Fundamentals of Data Engineering - Final Project  
-**Module:** Week 2 - Data Ingestion & Streaming  
+**Module:** Week 2 - Data Ingestion (Discovery Phase)  
+**Target Agency:** Utah Transit Authority (UTA) via Transitland  
 **Author** Jerico Radin
 
 -----
@@ -12,7 +13,7 @@
 
 GTFS Realtime (General Transit Feed Specification Realtime) is the industry-standard extension to static GTFS. While static GTFS defines the *scheduled* operations (stops, routes, timetables) in CSV format, GTFS Realtime provides a dynamic feed of **instantaneous updates**.
 
-This specification allows transit agencies (like the MBTA, MTA, or UTA) to push updates to consumers (Google Maps, Citymapper, or your data pipeline) regarding:
+This specification allows transit agencies like **UTA** to push updates to consumers regarding:
 
   * **Trip Updates:** Delays, cancellations, and changed routes.
   * **Service Alerts:** Stop moves or unforeseen events affecting a station.
@@ -24,109 +25,100 @@ Unlike most modern web APIs that use JSON or XML, GTFS Realtime uses **Protocol 
 
   * **Binary Serialization:** The data is transmitted as a binary stream, not text.
   * **Efficiency:** It is significantly smaller (smaller payload size) and faster to parse than JSON, which is critical for feeds that may contain thousands of vehicle updates every few seconds.
-  * **Strict Schema:** The data must be decoded against a `.proto` descriptor file. This ensures type safety but requires a specific decoding step in the ingestion pipeline.
+  * **Strict Schema:** The data must be decoded against a `.proto` descriptor file.
 
 -----
 
-## 2\. Data Description & Schema
+## 2\. Data Description & Schema (Data Dictionary)
 
-The GTFS Realtime schema is hierarchical. The root element is always a `FeedMessage`, which contains metadata and a list of entities.
+The GTFS Realtime schema is hierarchical. The root element is always a `FeedMessage`, which contains metadata and a list of entities. The "Tables" below represent the nested message objects defined in the standard `gtfs-realtime.proto` schema.
 
-### 2.1 Root Hierarchy
+### 2.1 FeedMessage (Root)
 
-Every poll to the API returns a single `FeedMessage` object.
+The top-level container returned by every HTTP poll.
 
 | Field | Type | Description |
 | :--- | :--- | :--- |
-| **`header`** | `FeedHeader` | Metadata about the feed itself (version, timestamp). |
-| **`entity`** | `List<FeedEntity>` | A repeated list of updates. This is the core payload. |
+| `header` | `FeedHeader` | Metadata about the feed (version, timestamp). |
+| `entity` | `list<FeedEntity>` | A repeated list of updates. This is the core payload. |
 
-### 2.2 FeedHeader Schema
+### 2.2 FeedHeader
 
-The header is critical for data engineering tasks, specifically for determining data freshness and preventing the processing of stale data.
+Metadata describing the validity and freshness of the data payload.
 
-  * **`gtfs_realtime_version`** *(string, required)*: The version of the specification (e.g., "2.0").
-  * **`incrementality`** *(enum)*: Usually `FULL_DATASET`, meaning the current payload replaces all previous state.
-  * **`timestamp`** *(uint64, required)*: POSIX time (seconds since epoch) when the feed was generated.
-      * *Engineering Note:* Calculate `Data Latency = Current Time - Header Timestamp` to monitor feed health.
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `gtfs_realtime_version` | `string` | Version of the spec (e.g., "2.0"). |
+| `timestamp` | `uint64` | POSIX time (seconds since epoch) of data generation. **Critical for latency checks.** |
 
-### 2.3 FeedEntity Schema
+### 2.3 FeedEntity
 
-Each `FeedEntity` represents a single update. It acts as a wrapper that contains **one** of the three specific update types.
+A wrapper that holds exactly **one** specific type of update.
 
-  * **`id`** *(string, required)*: Unique identifier for the entity.
-  * **`is_deleted`** *(bool)*: Indicates if the entity should be removed from the consumer's view.
-  * **`trip_update`**: (Optional) Fields related to arrival/departure times.
-  * **`vehicle`**: (Optional) Fields related to GPS positioning.
-  * **`alert`**: (Optional) Fields related to text-based service alerts.
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `id` | `string` | Unique identifier for this entity. |
+| `is_deleted` | `bool` | If true, the client should remove this entity from their view. |
+| `vehicle` | `VehiclePosition` | (Optional) GPS location of a vehicle. |
+| `trip_update` | `TripUpdate` | (Optional) Real-time arrival/departure prediction. |
 
-### 2.4 Entity Payloads
+### 2.4 VehiclePosition
 
-Depending on the endpoint you poll, the entity will contain one of the following structures:
+Represents the physical location and status of a transit vehicle.
 
-#### A. VehiclePosition
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `trip` | `TripDescriptor` | The trip this vehicle is currently serving. |
+| `vehicle` | `VehicleDescriptor` | Physical identifier of the bus/train (e.g., Bus \#405). |
+| `position` | `Position` | Lat/Lon/Bearing/Speed data. |
+| `current_stop_sequence` | `int32` | The stop sequence index the vehicle is currently at. |
+| `current_status` | `enum` | `INCOMING_AT`, `STOPPED_AT`, or `IN_TRANSIT_TO`. |
+| `timestamp` | `uint64` | Time when the GPS reading was taken. |
 
-Used for tracking fleet movement on a map.
+### 2.5 Cross-Reference: Realtime to Schedule
 
-  * **`trip`**: Links the vehicle to a specific scheduled trip (referenced by `trip_id`).
-  * **`position`**:
-      * `latitude` / `longitude` (float): WGS-84 coordinates.
-      * `bearing` (float): Direction the vehicle is facing.
-      * `speed` (float): Momentary speed in meters/second.
-  * **`current_status`**: Enum (`INCOMING_AT`, `STOPPED_AT`, `IN_TRANSIT_TO`).
-  * **`timestamp`**: Time when the specific GPS reading was taken.
+This section defines how the Realtime objects link to the Static CSV files (Foreign Keys).
 
-#### B. TripUpdate
-
-Used for predicting arrivals and delays.
-
-  * **`trip`**: Identifier for the trip being updated.
-  * **`stop_time_update`** (List): A sequence of updates for future stops.
-      * `stop_sequence`: The order of the stop.
-      * `arrival` / `departure`:
-          * `delay`: Integer (seconds). Positive = Late, Negative = Early.
-          * `time`: Absolute POSIX time for the prediction.
-
-#### C. Alert
-
-Used for human-readable notifications.
-
-  * **`active_period`**: Start and end times for the alert.
-  * **`informed_entity`**: Who is affected? (Specific route, stop, or entire agency).
-  * **`cause`**: Enum (`STRIKE`, `MAINTENANCE`, `WEATHER`, etc.).
-  * **`effect`**: Enum (`NO_SERVICE`, `SIGNIFICANT_DELAYS`, `DETOUR`, etc.).
-  * **`header_text`**: The headline of the alert (multilingual).
+| Realtime Object Field | Static CSV Table | Static CSV Column | Relationship Meaning |
+| :--- | :--- | :--- | :--- |
+| `TripUpdate.trip.trip_id` | `trips.txt` | `trip_id` | Links a live update to a scheduled trip. |
+| `VehiclePosition.trip.route_id` | `routes.txt` | `route_id` | Links a live update to a specific route. |
 
 -----
 
 ## 3\. Data Discovery Report
 
-**Data Discovery Lead:** Chase Powers  
-*Covers: Realtime Feed Verification + Protobuf Decoding + DuckDB Inspection*
+*Covers: Transitland API, Realtime Feed Verification, and Inspection*
 
 ### 3.1 Tasks
 
-Unlike the Static Schedule (CSV), the Realtime feed presents a unique challenge: **It is a binary stream.**
+To ensure reliable access to the UTA data stream, we utilize **Transitland**, an open data aggregator.
 
-  - **Locate URL:** Identify the specific endpoint for Vehicle Positions.
-  - **The Binary Challenge:** Verify that the raw file cannot be read by standard text editors or loaded directly into Excel/SQL.
-  - **The Solution (Translation Layer):** Develop a Python script to fetch the Protobuf and convert it to JSON.
-  - **Inspection:** Load the converted JSON into DuckDB to inspect the nested schema.
-  - **Reproducibility:** Containerize the fetch-decode-query workflow using Docker.
+  - **Identify Source:** Locate the UTA feed within the Transitland Registry (`f-9x0-uta~rt`).
+  - **Authentication:** Obtain a Transitland API Key.
+  - **Pipeline:** Fetch the raw Protobuf (`.pb`) file from Transitland, decode it, and load it into DuckDB for analysis.
 
 ### 3.2 Data Source Verification
 
-  - **Target URL:** `https://cdn.mbta.com/realtime/VehiclePositions.pb` (Example Agency)
-  - **Description:** Snapshot of current vehicle locations, speeds, and congestion status.
+  - **Aggregator:** Transitland
+  - **Source Agency:** Utah Transit Authority (UTA)
+  - **Feed ID:** `f-9x0-uta~rt`
+  - **Endpoint:** `https://transit.land/api/v2/rest/feeds/f-9x0-uta~rt/download_latest_rt/vehicle_positions.pb`
   - **Format:** Protocol Buffers (Binary).
-  - **Update Frequency:** \~30 seconds.
+  - **Authentication:** API Key required via query parameter (`?apikey=...`).
+
+#### 3.2.1 Obtaining a Transitland API Key
+
+1.  Sign up for a free account at **[Transitland](https://www.transit.land/documentation)**.
+2.  Navigate to your account settings to generate a v2 API Token.
+3.  This key allows access to the "Download Latest Realtime" endpoints.
 
 ### 3.3 Data Load and Inspection Strategy
 
-Because DuckDB cannot natively query raw `.pb` files without a compiled schema, we implemented a **"Fetch-Decode-Query"** pipeline.
+We implemented a **"Fetch-Decode-Query"** pipeline using Docker.
 
-1.  **Fetch & Decode:** When the container starts, a Python script fetches the Protobuf data and converts it to JSON.
-2.  **Interactive Querying:** The container then opens an interactive DuckDB shell, allowing us to run SQL directly against the generated JSON.
+1.  **Fetch & Decode:** When the container starts, a Python script fetches the authenticated Protobuf data from Transitland and converts it to JSON.
+2.  **Interactive Querying:** The container then opens an interactive DuckDB shell.
 
 #### DuckDB Inspection Queries
 
@@ -166,14 +158,11 @@ LIMIT 10;
 
 ## 4\. Docker Reproduction Instructions
 
-**Infrastructure Lead:** Jerico Radin  
 *Covers: Containerized Decoding & Inspection Environment*
 
-To ensure organization, we separate the realtime data dumps from the static CSVs by programmatically creating a `GTFS_realtime` directory.
+To ensure reproducibility and security, we containerized the discovery process. We **do not** hardcode the API key; it is passed as an Environment Variable.
 
 ### 4.1 Directory Structure
-
-The Python script is located in `scripts/`, and the data will be output to `data/GTFS_realtime/`.
 
 ```text
 project-root/
@@ -188,7 +177,7 @@ project-root/
 
 ### 4.2 The Decoder Script (`scripts/gtfs_realtime_decoder.py`)
 
-This script fetches the data and ensures the `GTFS_realtime` directory exists before saving.
+This script reads the `TRANSITLAND_API_KEY` from the environment, fetches the binary data, and decodes it. If no key is present, it falls back to the MBTA (Boston) feed for testing purposes.
 
 ```python
 import requests
@@ -198,8 +187,20 @@ import os
 from google.transit import gtfs_realtime_pb2
 from google.protobuf.json_format import MessageToDict
 
-URL = "https://cdn.mbta.com/realtime/VehiclePositions.pb"
-# Output to a specific subfolder
+# --- CONFIGURATION ---
+# 1. Try to get the Transitland Key (for UTA)
+API_KEY = os.environ.get('TRANSITLAND_API_KEY')
+
+# 2. If no key is provided, fallback to MBTA (Boston) which is Open/Free
+if not API_KEY:
+    print("\n[NOTICE] No TRANSITLAND_API_KEY found. Switching to MBTA (Boston) for testing.")
+    # MBTA Direct URL (No Key Required)
+    URL = "https://cdn.mbta.com/realtime/VehiclePositions.pb"
+else:
+    print(f"\n[INFO] Using Transitland API Key for UTA...")
+    # UTA via Transitland (Requires Key)
+    URL = f"https://transit.land/api/v2/rest/feeds/f-9x0-uta~rt/download_latest_rt/vehicle_positions.pb?apikey={API_KEY}"
+
 OUTPUT_DIR = "/data/GTFS_realtime"
 OUTPUT_FILE = f"{OUTPUT_DIR}/realtime_dump.json"
 
@@ -214,13 +215,24 @@ def fetch_and_decode():
 
     print("2. Parsing Protobuf...")
     feed = gtfs_realtime_pb2.FeedMessage()
-    feed.ParseFromString(response.content)
+    try:
+        feed.ParseFromString(response.content)
+    except Exception as e:
+        print(f"Error parsing protobuf: {e}")
+        sys.exit(1)
 
-    print("3. Converting to JSON...")
+    print(f"3. Converting {len(feed.entity)} entities to JSON...")
     data_dict = MessageToDict(feed)
 
-    # Ensure subdirectory exists
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    # --- SAFETY PATCH: Ensure 'entity' key exists ---
+    # If the feed is empty (common at night), MessageToDict omits the key. 
+    # We force it back so DuckDB doesn't crash.
+    if "entity" not in data_dict:
+        print("[WARNING] Feed is empty (0 vehicles). Forcing empty 'entity' list to fix DuckDB schema.")
+        data_dict["entity"] = []
+
+    if not os.path.exists(OUTPUT_DIR):
+        os.makedirs(OUTPUT_DIR, exist_ok=True)
 
     print(f"4. Saving to {OUTPUT_FILE}...")
     with open(OUTPUT_FILE, 'w') as f:
@@ -234,7 +246,7 @@ if __name__ == "__main__":
 
 ### 4.3 The Dockerfile (`Dockerfile.realtime`)
 
-We use a **Python base image** to ensure we have a proper shell environment. We then programmatically download the **DuckDB CLI binary** that matches the user's computer architecture (Apple Silicon vs. Intel) to enable the interactive SQL session.
+We use a **Python base image** and manually install the correct **DuckDB CLI binary** for the user's architecture (Mac/Intel) to enable the interactive shell.
 
 ```dockerfile
 FROM python:3.9-slim
@@ -265,47 +277,38 @@ RUN mkdir /data
 CMD /bin/bash -c "python gtfs_realtime_decoder.py && echo '\n✅ Ready. Paste SQL now.\n' && duckdb"
 ```
 
-### 4.4 Build & Run Instructions
+### 4.4 Execution
 
-Run the container mounting the root `data` folder. The script will create the subfolder for you.
+To run the container, pass your Transitland API key using the `-e` flag. If you want to test with MBTA (Boston) without a key, you can omit the `-e` flag.
+
+**Mac/Linux:**
 
 ```bash
-# Build
 docker build -f Dockerfile.realtime -t gtfs-realtime .
 
-# Run (Mac/Linux) - Note the use of -it for interactive mode
-docker run --rm -it -v "$(pwd)/data":/data gtfs-realtime
+# Option A: Use UTA (Requires Key)
+docker run --rm -it \
+  -v "$(pwd)/data":/data \
+  -e TRANSITLAND_API_KEY="PASTE_YOUR_KEY_HERE" \
+  gtfs-realtime
 
-# Run (Windows PowerShell)
-docker run --rm -it -v "${PWD}/data":/data gtfs-realtime
+# Option B: Use MBTA (No Key - For Testing)
+docker run --rm -it -v "$(pwd)/data":/data gtfs-realtime
 ```
 
-### 4.5 Verification Output
+**Windows (PowerShell):**
 
-Upon running the container, you will see the Python script execute, followed by the DuckDB prompt `D`. You can now verify the data:
-
-```sql
-D SELECT count(*) FROM read_json_auto('/data/GTFS_realtime/realtime_dump.json');
+```powershell
+docker run --rm -it `
+  -v "${PWD}/data":/data `
+  -e TRANSITLAND_API_KEY="PASTE_YOUR_KEY_HERE" `
+  gtfs-realtime
 ```
 
 -----
 
-## 5\. References & Further Reading
+## 5\. References
 
-For a deeper dive into the specific byte-level requirements of the protocol or to troubleshoot validation issues, refer to the following official documentation.
-
-### 5.1 Official Specifications
-
-  * **[GTFS Realtime Overview](https://developers.google.com/transit/gtfs-realtime)** The primary entry point for the specification. It covers the high-level architecture of Protocol Buffers and the relationship between the Static and Realtime feeds.
-
-  * **[GTFS Realtime Validation Errors & Warnings](https://developers.google.com/transit/gtfs-realtime/guides/realtime-errors-warnings)** A critical resource for debugging. It defines standard error codes you might see during ingestion, such as:
-
-      * `TIMESTAMP_FUTURE`: The feed header time is in the future (check server clock).
-      * `TRIP_UPDATE_WITHOUT_STOP_TIME_UPDATE`: A trip update exists but has no prediction data.
-      * `NO_VEHICLE_POSITION`: A vehicle is referenced but has no GPS data.
-
-### 5.2 Community Standards
-
-  * **[GTFS Realtime Best Practices](https://gtfs.org/realtime/best-practices/)** Beyond the technical schema, this guide describes the *standard of care* expected by data consumers (e.g., "Feeds should be refreshed at least every 30 seconds" and "Do not output empty entities").
-
-  * **[Protocol Buffers Language Guide (proto3)](https://protobuf.dev/programming-guides/proto3/)** The technical documentation for the `.proto` file format itself, useful if you need to modify the data structures or generate bindings for a language other than Python.
+  * **[Transitland API Documentation](https://www.transit.land/documentation)** - Official API reference and key signup.
+  * **[GTFS Realtime Overview](https://developers.google.com/transit/gtfs-realtime)** - Protocol specification.
+  * **[GTFS Realtime Best Practices](https://gtfs.org/realtime/best-practices/)** - Community standards for data feed quality.
