@@ -2,8 +2,8 @@
 
 **Project:** CS6830 Fundamentals of Data Engineering - Final Project  
 **Module:** Week 2 - Data Ingestion (Discovery Phase)  
-**Target Agency:** Utah Transit Authority (UTA) via Transitland  
-**Author** Jerico Radin
+**Target Agency:** Utah Transit Authority (UTA)  
+**Author:** Jerico Radin
 
 -----
 
@@ -88,36 +88,30 @@ This section defines how the Realtime objects link to the Static CSV files (Fore
 
 ## 3\. Data Discovery Report
 
-*Covers: Transitland API, Realtime Feed Verification, and Inspection*
+*Covers: Public Feed Verification and Inspection*
 
 ### 3.1 Tasks
 
-To ensure reliable access to the UTA data stream, we utilize **Transitland**, an open data aggregator.
+To ensure reliable access to the UTA data stream, we utilize the official public endpoint provided by the agency.
 
-  - **Identify Source:** Locate the UTA feed within the Transitland Registry (`f-9x0-uta~rt`).
-  - **Authentication:** Obtain a Transitland API Key.
-  - **Pipeline:** Fetch the raw Protobuf (`.pb`) file from Transitland, decode it, and load it into DuckDB for analysis.
+  - **Identify Source:** `apps.rideuta.com/tms/gtfs/Vehicle`
+  - **Pipeline:** Fetch the raw Protobuf (`.pb`) file using Python (with browser-mimicking headers), decode it, and load it into DuckDB for analysis.
 
 ### 3.2 Data Source Verification
 
-  - **Aggregator:** Transitland
-  - **Source Agency:** Utah Transit Authority (UTA)
-  - **Feed ID:** `f-9x0-uta~rt`
-  - **Endpoint:** `https://transit.land/api/v2/rest/feeds/f-9x0-uta~rt/download_latest_rt/vehicle_positions.pb`
+  - **Source:** Utah Transit Authority (UTA)
+  - **Endpoint:** `https://apps.rideuta.com/tms/gtfs/Vehicle`
   - **Format:** Protocol Buffers (Binary).
-  - **Authentication:** API Key required via query parameter (`?apikey=...`).
+  - **Authentication:** None (Public Endpoint).
+  - **Update Frequency:** 1 minute.
 
-#### 3.2.1 Obtaining a Transitland API Key
-
-1.  Sign up for a free account at **[Transitland](https://www.transit.land/documentation)**.
-2.  Navigate to your account settings to generate a v2 API Token.
-3.  This key allows access to the "Download Latest Realtime" endpoints.
+**Distinction from Schedule:** Note that this URL (`.../gtfs/Vehicle`) is distinct from the Static Schedule URL (`.../GTFS.zip`). While both trigger a file download in a browser, the Realtime file contains binary Protobuf data, whereas the Schedule file contains a ZIP of CSVs.
 
 ### 3.3 Data Load and Inspection Strategy
 
 We implemented a **"Fetch-Decode-Query"** pipeline using Docker.
 
-1.  **Fetch & Decode:** When the container starts, a Python script fetches the authenticated Protobuf data from Transitland and converts it to JSON.
+1.  **Fetch & Decode:** When the container starts, a Python script fetches the Protobuf data from UTA and converts it to JSON.
 2.  **Interactive Querying:** The container then opens an interactive DuckDB shell.
 
 #### DuckDB Inspection Queries
@@ -160,7 +154,7 @@ LIMIT 10;
 
 *Covers: Containerized Decoding & Inspection Environment*
 
-To ensure reproducibility and security, we containerized the discovery process. We **do not** hardcode the API key; it is passed as an Environment Variable.
+To ensure reproducibility, we containerized the discovery process.
 
 ### 4.1 Directory Structure
 
@@ -177,7 +171,7 @@ project-root/
 
 ### 4.2 The Decoder Script (`scripts/gtfs_realtime_decoder.py`)
 
-This script reads the `TRANSITLAND_API_KEY` from the environment, fetches the binary data, and decodes it. If no key is present, it falls back to the MBTA (Boston) feed for testing purposes.
+This script fetches the binary data from the UTA public URL using specific headers to ensure access.
 
 ```python
 import requests
@@ -188,26 +182,23 @@ from google.transit import gtfs_realtime_pb2
 from google.protobuf.json_format import MessageToDict
 
 # --- CONFIGURATION ---
-# 1. Try to get the Transitland Key (for UTA)
-API_KEY = os.environ.get('TRANSITLAND_API_KEY')
-
-# 2. If no key is provided, fallback to MBTA (Boston) which is Open/Free
-if not API_KEY:
-    print("\n[NOTICE] No TRANSITLAND_API_KEY found. Switching to MBTA (Boston) for testing.")
-    # MBTA Direct URL (No Key Required)
-    URL = "https://cdn.mbta.com/realtime/VehiclePositions.pb"
-else:
-    print(f"\n[INFO] Using Transitland API Key for UTA...")
-    # UTA via Transitland (Requires Key)
-    URL = f"https://transit.land/api/v2/rest/feeds/f-9x0-uta~rt/download_latest_rt/vehicle_positions.pb?apikey={API_KEY}"
+# Professor's URL (Public endpoint, no API key needed)
+URL = "https://apps.rideuta.com/tms/gtfs/Vehicle"
 
 OUTPUT_DIR = "/data/GTFS_realtime"
 OUTPUT_FILE = f"{OUTPUT_DIR}/realtime_dump.json"
 
 def fetch_and_decode():
     print(f"1. Fetching binary data from {URL}...")
+    
+    # We must use a User-Agent header to mimic a web browser, 
+    # otherwise the server might block the script.
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+    }
+
     try:
-        response = requests.get(URL)
+        response = requests.get(URL, headers=headers, timeout=30)
         response.raise_for_status()
     except Exception as e:
         print(f"Error fetching data: {e}")
@@ -224,11 +215,11 @@ def fetch_and_decode():
     print(f"3. Converting {len(feed.entity)} entities to JSON...")
     data_dict = MessageToDict(feed)
 
-    # --- SAFETY PATCH: Ensure 'entity' key exists ---
-    # If the feed is empty (common at night), MessageToDict omits the key. 
-    # We force it back so DuckDB doesn't crash.
+    # --- SCHEMA SAFETY PATCH ---
+    # If the feed is empty (0 vehicles), we force the 'entity' key to exist
+    # so DuckDB doesn't crash during schema inference.
     if "entity" not in data_dict:
-        print("[WARNING] Feed is empty (0 vehicles). Forcing empty 'entity' list to fix DuckDB schema.")
+        print("[WARNING] Feed is empty. Creating empty 'entity' list to maintain schema.")
         data_dict["entity"] = []
 
     if not os.path.exists(OUTPUT_DIR):
@@ -257,7 +248,6 @@ RUN apt-get update && apt-get install -y wget unzip \
     && pip install --no-cache-dir requests gtfs-realtime-bindings protobuf
 
 # 2. Install DuckDB CLI (Architecture Aware)
-# Detects if machine is ARM64 (Mac) or AMD64 (Intel) and fetches the right zip
 RUN set -e; \
     ARCH=$(uname -m); \
     if [ "$ARCH" = "aarch64" ]; then \
@@ -274,41 +264,32 @@ COPY scripts/gtfs_realtime_decoder.py .
 RUN mkdir /data
 
 # 3. Pipeline: Decode -> Open Interactive Shell
-CMD /bin/bash -c "python gtfs_realtime_decoder.py && echo '\n✅ Ready. Paste SQL now.\n' && duckdb"
+# Using ';' ensures DuckDB opens even if the fetch script encounters an error
+CMD /bin/bash -c "python gtfs_realtime_decoder.py; echo '\n✅ Opening DuckDB Shell...\n'; /usr/local/bin/duckdb"
 ```
 
 ### 4.4 Execution
 
-To run the container, pass your Transitland API key using the `-e` flag. If you want to test with MBTA (Boston) without a key, you can omit the `-e` flag.
+Since no API key is required, the run command is simple.
 
 **Mac/Linux:**
 
 ```bash
 docker build -f Dockerfile.realtime -t gtfs-realtime .
 
-# Option A: Use UTA (Requires Key)
-docker run --rm -it \
-  -v "$(pwd)/data":/data \
-  -e TRANSITLAND_API_KEY="PASTE_YOUR_KEY_HERE" \
-  gtfs-realtime
-
-# Option B: Use MBTA (No Key - For Testing)
 docker run --rm -it -v "$(pwd)/data":/data gtfs-realtime
 ```
 
 **Windows (PowerShell):**
 
 ```powershell
-docker run --rm -it `
-  -v "${PWD}/data":/data `
-  -e TRANSITLAND_API_KEY="PASTE_YOUR_KEY_HERE" `
-  gtfs-realtime
+docker run --rm -it -v "${PWD}/data":/data gtfs-realtime
 ```
 
 -----
 
 ## 5\. References
 
-  * **[Transitland API Documentation](https://www.transit.land/documentation)** - Official API reference and key signup.
+  * **[UTA Public GTFS Feed](https://apps.rideuta.com/tms/gtfs/Vehicle)** - Official public endpoint.
   * **[GTFS Realtime Overview](https://developers.google.com/transit/gtfs-realtime)** - Protocol specification.
   * **[GTFS Realtime Best Practices](https://gtfs.org/realtime/best-practices/)** - Community standards for data feed quality.

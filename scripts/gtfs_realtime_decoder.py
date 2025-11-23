@@ -6,26 +6,23 @@ from google.transit import gtfs_realtime_pb2
 from google.protobuf.json_format import MessageToDict
 
 # --- CONFIGURATION ---
-# 1. Try to get the Transitland Key (for UTA)
-API_KEY = os.environ.get('TRANSITLAND_API_KEY')
-
-# 2. If no key is provided, fallback to MBTA (Boston) which is Open/Free
-if not API_KEY:
-    print("\n[NOTICE] No TRANSITLAND_API_KEY found. Switching to MBTA (Boston) for testing.")
-    # MBTA Direct URL (No Key Required)
-    URL = "https://cdn.mbta.com/realtime/VehiclePositions.pb"
-else:
-    print(f"\n[INFO] Using Transitland API Key for UTA...")
-    # UTA via Transitland (Requires Key)
-    URL = f"https://transit.land/api/v2/rest/feeds/f-9x0-uta~rt/download_latest_rt/vehicle_positions.pb?apikey={API_KEY}"
+# Professor's URL (Public endpoint, no API key needed)
+URL = "https://apps.rideuta.com/tms/gtfs/Vehicle"
 
 OUTPUT_DIR = "/data/GTFS_realtime"
 OUTPUT_FILE = f"{OUTPUT_DIR}/realtime_dump.json"
 
 def fetch_and_decode():
     print(f"1. Fetching binary data from {URL}...")
+    
+    # We must use a User-Agent header to mimic a web browser, 
+    # otherwise the server might block the script.
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+    }
+
     try:
-        response = requests.get(URL)
+        response = requests.get(URL, headers=headers, timeout=30)
         response.raise_for_status()
     except Exception as e:
         print(f"Error fetching data: {e}")
@@ -42,11 +39,11 @@ def fetch_and_decode():
     print(f"3. Converting {len(feed.entity)} entities to JSON...")
     data_dict = MessageToDict(feed)
 
-    # --- SAFETY PATCH: Ensure 'entity' key exists ---
-    # If the feed is empty (common at night), MessageToDict omits the key. 
-    # We force it back so DuckDB doesn't crash.
+    # --- SCHEMA SAFETY PATCH ---
+    # If the feed is empty (0 vehicles), we force the 'entity' key to exist
+    # so DuckDB doesn't crash during schema inference.
     if "entity" not in data_dict:
-        print("[WARNING] Feed is empty (0 vehicles). Forcing empty 'entity' list to fix DuckDB schema.")
+        print("[WARNING] Feed is empty. Creating empty 'entity' list to maintain schema.")
         data_dict["entity"] = []
 
     if not os.path.exists(OUTPUT_DIR):
