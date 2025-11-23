@@ -6,7 +6,6 @@ RUN apt-get update && apt-get install -y wget unzip \
     && pip install --no-cache-dir requests gtfs-realtime-bindings protobuf
 
 # 2. Install DuckDB CLI (Architecture Aware)
-# Detects if machine is ARM64 (Mac) or AMD64 (Intel) and fetches the right zip
 RUN set -e; \
     ARCH=$(uname -m); \
     if [ "$ARCH" = "aarch64" ]; then \
@@ -23,4 +22,5 @@ COPY scripts/gtfs_realtime_decoder.py .
 RUN mkdir /data
 
 # 3. Pipeline: Decode -> Open Interactive Shell
-CMD /bin/bash -c "python gtfs_realtime_decoder.py && echo '\n✅ Ready. Paste SQL now.\n' && duckdb"
+# Using ';' ensures DuckDB opens even if the fetch script encounters an error
+CMD /bin/bash -c "python gtfs_realtime_decoder.py; echo '\n✅ Opening DuckDB Shell...\n'; /usr/local/bin/duckdb"
