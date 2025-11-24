@@ -92,10 +92,11 @@ This section defines how the Realtime objects link to the Static CSV files (Fore
 
 ### 3.1 Tasks
 
-To ensure reliable access to the UTA data stream, we utilize the official public endpoint provided by the agency.
+To ensure reliable access to the UTA data stream, we utilize the official public endpoint provided by the agency. We also implemented a fallback mechanism for reliability.
 
-  - **Identify Source:** `apps.rideuta.com/tms/gtfs/Vehicle`
-  - **Pipeline:** Fetch the raw Protobuf (`.pb`) file using Python (with browser-mimicking headers), decode it, and load it into DuckDB for analysis.
+  - **Primary Source:** `apps.rideuta.com/tms/gtfs/Vehicle` (UTA)
+  - **Fallback Source:** `cdn.mbta.com/realtime/VehiclePositions.pb` (MBTA/Boston) - Used for validation when UTA servers are down (e.g., weekends).
+  - **Pipeline:** Fetch the raw Protobuf (`.pb`) file using Python, decode it, and load it into DuckDB for analysis.
 
 ### 3.2 Data Source Verification
 
@@ -105,15 +106,17 @@ To ensure reliable access to the UTA data stream, we utilize the official public
   - **Authentication:** None (Public Endpoint).
   - **Update Frequency:** 1 minute.
 
-**Distinction from Schedule:** Note that this URL (`.../gtfs/Vehicle`) is distinct from the Static Schedule URL (`.../GTFS.zip`). While both trigger a file download in a browser, the Realtime file contains binary Protobuf data, whereas the Schedule file contains a ZIP of CSVs.
+**Engineering Note:** UTA feed availability can be intermittent. Our ingestion script supports an `AGENCY=MBTA` environment variable to switch to the Boston feed for pipeline testing if the UTA feed returns 0 records.
 
 ### 3.3 Data Load and Inspection Strategy
+
 We implemented a **"Fetch-Decode-Query"** pipeline using Docker.
 
-1.  **Fetch & Decode:** When the container starts, a Python script fetches the Protobuf data from UTA and converts it to JSON.
+1.  **Fetch & Decode:** When the container starts, a Python script fetches the Protobuf data and converts it to JSON.
 2.  **Interactive Querying:** The container then opens an interactive DuckDB shell.
 
 #### DuckDB Inspection Queries
+
 Once the container drops you into the `D` prompt, copy and paste the following block to load and verify the data.
 
 ```sql
@@ -135,7 +138,7 @@ CREATE VIEW vehicles AS
 SELECT unnest(entity) as data FROM raw_feed;
 
 -- 4. Inspect Specific Vehicle Attributes
--- Note: We select fields guaranteed to exist. UTA often omits optional fields like 'currentStatus'.
+-- Note: We select fields common to both UTA and MBTA schemas.
 SELECT 
     data.id AS entity_id,
     data.vehicle.vehicle.id AS vehicle_id,
@@ -152,7 +155,7 @@ LIMIT 10;
 
 *Covers: Containerized Decoding & Inspection Environment*
 
-To ensure reproducibility, we containerized the discovery process.
+To ensure reproducibility, we containerized the discovery process. The environment supports toggling between agencies.
 
 ### 4.1 Directory Structure
 
@@ -169,7 +172,7 @@ project-root/
 
 ### 4.2 The Decoder Script (`scripts/gtfs_realtime_decoder.py`)
 
-This script fetches the binary data from the UTA public URL using specific headers to ensure access.
+This script fetches data from the UTA public URL by default but can switch to MBTA if the `AGENCY` environment variable is set.
 
 ```python
 import requests
@@ -180,8 +183,15 @@ from google.transit import gtfs_realtime_pb2
 from google.protobuf.json_format import MessageToDict
 
 # --- CONFIGURATION ---
-# Professor's URL (Public endpoint, no API key needed)
-URL = "https://apps.rideuta.com/tms/gtfs/Vehicle"
+# Default to UTA, allow fallback to MBTA (Boston) via env var
+TARGET_AGENCY = os.environ.get('AGENCY', 'UTA')
+
+if TARGET_AGENCY == 'MBTA':
+    print("\n[INFO] Target: MBTA (Boston) - Fallback Mode")
+    URL = "https://cdn.mbta.com/realtime/VehiclePositions.pb"
+else:
+    print("\n[INFO] Target: UTA (Utah) - Primary")
+    URL = "https://apps.rideuta.com/tms/gtfs/Vehicle"
 
 OUTPUT_DIR = "/data/GTFS_realtime"
 OUTPUT_FILE = f"{OUTPUT_DIR}/realtime_dump.json"
@@ -189,8 +199,7 @@ OUTPUT_FILE = f"{OUTPUT_DIR}/realtime_dump.json"
 def fetch_and_decode():
     print(f"1. Fetching binary data from {URL}...")
     
-    # We must use a User-Agent header to mimic a web browser, 
-    # otherwise the server might block the script.
+    # Headers required for UTA
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
     }
@@ -214,10 +223,9 @@ def fetch_and_decode():
     data_dict = MessageToDict(feed)
 
     # --- SCHEMA SAFETY PATCH ---
-    # If the feed is empty (0 vehicles), we force the 'entity' key to exist
-    # so DuckDB doesn't crash during schema inference.
+    # If feed is empty, ensure 'entity' list exists to prevent DB crashes
     if "entity" not in data_dict:
-        print("[WARNING] Feed is empty. Creating empty 'entity' list to maintain schema.")
+        print("[WARNING] Feed is empty. Creating empty 'entity' list.")
         data_dict["entity"] = []
 
     if not os.path.exists(OUTPUT_DIR):
@@ -268,9 +276,9 @@ CMD /bin/bash -c "python gtfs_realtime_decoder.py; echo '\n✅ Opening DuckDB Sh
 
 ### 4.4 Execution
 
-Since no API key is required, the run command is simple.
+You can choose which agency to poll by setting an environment variable.
 
-**Mac/Linux:**
+**Option A: UTA (Default)**
 
 ```bash
 docker build -f Dockerfile.realtime -t gtfs-realtime .
@@ -278,10 +286,10 @@ docker build -f Dockerfile.realtime -t gtfs-realtime .
 docker run --rm -it -v "$(pwd)/data":/data gtfs-realtime
 ```
 
-**Windows (PowerShell):**
+**Option B: MBTA / Boston (Fallback for testing)**
 
-```powershell
-docker run --rm -it -v "${PWD}/data":/data gtfs-realtime
+```bash
+docker run --rm -it -e AGENCY=MBTA -v "$(pwd)/data":/data gtfs-realtime
 ```
 
 -----
@@ -289,5 +297,6 @@ docker run --rm -it -v "${PWD}/data":/data gtfs-realtime
 ## 5\. References
 
   * **[UTA Public GTFS Feed](https://apps.rideuta.com/tms/gtfs/Vehicle)** - Official public endpoint.
+  * **[MBTA Realtime Feed](https://cdn.mbta.com/realtime/VehiclePositions.pb)** - Fallback endpoint.
   * **[GTFS Realtime Overview](https://developers.google.com/transit/gtfs-realtime)** - Protocol specification.
   * **[GTFS Realtime Best Practices](https://gtfs.org/realtime/best-practices/)** - Community standards for data feed quality.
