@@ -6,8 +6,15 @@ from google.transit import gtfs_realtime_pb2
 from google.protobuf.json_format import MessageToDict
 
 # --- CONFIGURATION ---
-# Professor's URL (Public endpoint, no API key needed)
-URL = "https://apps.rideuta.com/tms/gtfs/Vehicle"
+# Default to UTA, allow fallback to MBTA (Boston) via env var
+TARGET_AGENCY = os.environ.get('AGENCY', 'UTA')
+
+if TARGET_AGENCY == 'MBTA':
+    print("\n[INFO] Target: MBTA (Boston) - Fallback Mode")
+    URL = "https://cdn.mbta.com/realtime/VehiclePositions.pb"
+else:
+    print("\n[INFO] Target: UTA (Utah) - Primary")
+    URL = "https://apps.rideuta.com/tms/gtfs/Vehicle"
 
 OUTPUT_DIR = "/data/GTFS_realtime"
 OUTPUT_FILE = f"{OUTPUT_DIR}/realtime_dump.json"
@@ -15,8 +22,7 @@ OUTPUT_FILE = f"{OUTPUT_DIR}/realtime_dump.json"
 def fetch_and_decode():
     print(f"1. Fetching binary data from {URL}...")
     
-    # We must use a User-Agent header to mimic a web browser, 
-    # otherwise the server might block the script.
+    # Headers required for UTA
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
     }
@@ -40,10 +46,9 @@ def fetch_and_decode():
     data_dict = MessageToDict(feed)
 
     # --- SCHEMA SAFETY PATCH ---
-    # If the feed is empty (0 vehicles), we force the 'entity' key to exist
-    # so DuckDB doesn't crash during schema inference.
+    # If feed is empty, ensure 'entity' list exists to prevent DB crashes
     if "entity" not in data_dict:
-        print("[WARNING] Feed is empty. Creating empty 'entity' list to maintain schema.")
+        print("[WARNING] Feed is empty. Creating empty 'entity' list.")
         data_dict["entity"] = []
 
     if not os.path.exists(OUTPUT_DIR):
