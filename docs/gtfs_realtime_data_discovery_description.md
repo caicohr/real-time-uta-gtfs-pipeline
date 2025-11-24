@@ -108,14 +108,12 @@ To ensure reliable access to the UTA data stream, we utilize the official public
 **Distinction from Schedule:** Note that this URL (`.../gtfs/Vehicle`) is distinct from the Static Schedule URL (`.../GTFS.zip`). While both trigger a file download in a browser, the Realtime file contains binary Protobuf data, whereas the Schedule file contains a ZIP of CSVs.
 
 ### 3.3 Data Load and Inspection Strategy
-
 We implemented a **"Fetch-Decode-Query"** pipeline using Docker.
 
 1.  **Fetch & Decode:** When the container starts, a Python script fetches the Protobuf data from UTA and converts it to JSON.
 2.  **Interactive Querying:** The container then opens an interactive DuckDB shell.
 
 #### DuckDB Inspection Queries
-
 Once the container drops you into the `D` prompt, copy and paste the following block to load and verify the data.
 
 ```sql
@@ -137,13 +135,13 @@ CREATE VIEW vehicles AS
 SELECT unnest(entity) as data FROM raw_feed;
 
 -- 4. Inspect Specific Vehicle Attributes
--- Note: Protobuf JSON conversion uses camelCase (e.g., currentStatus)
+-- Note: We select fields guaranteed to exist. UTA often omits optional fields like 'currentStatus'.
 SELECT 
     data.id AS entity_id,
     data.vehicle.vehicle.id AS vehicle_id,
     data.vehicle.position.latitude AS lat,
     data.vehicle.position.longitude AS lon,
-    data.vehicle.currentStatus AS status
+    data.vehicle.timestamp AS gps_time
 FROM vehicles
 LIMIT 10;
 ```
