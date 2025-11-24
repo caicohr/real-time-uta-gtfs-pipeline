@@ -15,7 +15,7 @@ The polling service performs the following functions:
 - Decodes the binary Protocol Buffers feed
 - Extracts key fields for each vehicle
 - Formats the data into JSON-ready structures
-- Runs automatically every 30 seconds using AWS Lambda and EventBridge
+ - Runs automatically every 1 minute using AWS Lambda and EventBridge
 
 This component completes Part 3: Polling of the project pipeline. A separate team member is responsible for Part 4: Streaming the Data to Kinesis.
 
@@ -32,8 +32,11 @@ real-time-uta-gtfs-pipeline/
 ├── scripts/
 │   ├── poll_gtfs_realtime.py
 │   └── poll_lambda.py
+├── requirements.txt
 └── …
 ```
+
+Note: Dependencies are not committed to source control. See "Managing Dependencies (Not Stored in Repo)" below.
 
 ## File Responsibilities
 
@@ -46,7 +49,7 @@ real-time-uta-gtfs-pipeline/
 `poll_lambda.py`
 - Wraps the polling code in an AWS Lambda handler
 - Returns the data in the required Lambda response format
-- Serves as the deployed entrypoint executed every 30 seconds
+- Serves as the deployed entrypoint executed every 1 minute
 
 ---
 
@@ -92,6 +95,16 @@ pip install requests gtfs-realtime-bindings protobuf
 - `requests`: Handles HTTP GET requests
 - `gtfs-realtime-bindings`: Provides classes for decoding GTFS feeds
 - `protobuf`: Supports binary Protobuf parsing
+
+### Packages Required for Lambda
+
+The polling Lambda requires the following Python packages to run in the Lambda execution environment:
+
+- `requests`
+- `protobuf`
+- `gtfs-realtime-bindings`
+
+These packages must be included in the deployment package (or provided via a Lambda layer) so the function can import them at runtime.
 
 ---
 
@@ -145,9 +158,9 @@ python scripts/poll_lambda.py
 - Runtime: Python 3.x
 - Handler: `poll_lambda.lambda_handler`
 - Deployment Package Includes:
-	- `poll_lambda.py`
-	- `poll_gtfs_realtime.py`
-	- Required dependencies (or Lambda layer)
+ - `poll_lambda.py`
+ - `poll_gtfs_realtime.py`
+ - Required dependencies (or Lambda layer). Dependencies are not committed to source control; install them during deployment or use a Lambda layer.
 
 **Testing in AWS Console**
 
@@ -166,9 +179,106 @@ This confirms that the Lambda executed and retrieved live data.
 
 ---
 
-## Scheduling with EventBridge (30-Second Polling)
+## Managing Dependencies (Not Stored in Repo)
 
-To meet the project requirement, an EventBridge rule triggers the Lambda every 30 seconds.
+- Dependencies are declared in `requirements.txt` and installed at deployment time.
+- The repository includes only the application code: `poll_gtfs_realtime.py` and `poll_lambda.py`.
+- Dependency installation occurs during packaging or in the CI/CD deployment step; dependency directories (such as `lambda_package/`) are not committed to source control.
+
+---
+
+## Building the Lambda Deployment Package
+
+Follow these steps to build a deployment package locally (or replicate in CI/CD):
+
+1. Create a packaging directory:
+
+```bash
+mkdir -p lambda_package
+```
+
+2. Install dependencies into the folder:
+
+```bash
+pip install -r requirements.txt -t lambda_package/
+```
+
+3. Copy the application files into `lambda_package/`:
+
+```bash
+cp scripts/poll_gtfs_realtime.py scripts/poll_lambda.py lambda_package/
+```
+
+4. Zip the folder for Lambda deployment:
+
+```bash
+cd lambda_package
+zip -r ../lambda_package.zip .
+cd ..
+```
+
+Deploy `lambda_package.zip` to Lambda or upload the contents to an S3 bucket and create a new Lambda version.
+
+**Recommended .gitignore entries**
+
+Add the following to `.gitignore` to avoid committing build artifacts and virtual environments:
+
+```
+lambda_package/
+venv/
+*.zip
+```
+
+---
+
+## Installing Dependencies for Lambda
+
+If you prefer to build the Lambda deployment package without using a `requirements.txt` file, follow these steps to install the necessary packages directly into the package directory and create the deployment zip.
+
+1. Create a packaging directory:
+
+```bash
+mkdir -p lambda_package
+```
+
+2. Copy the application files into `lambda_package/`:
+
+```bash
+cp scripts/poll_gtfs_realtime.py scripts/poll_lambda.py lambda_package/
+```
+
+3. Install the required packages directly into the package folder:
+
+```bash
+pip install requests protobuf gtfs-realtime-bindings -t lambda_package/
+```
+
+4. Zip the folder for Lambda deployment:
+
+```bash
+cd lambda_package
+zip -r ../lambda_package.zip .
+cd ..
+```
+
+5. Upload `lambda_package.zip` to AWS Lambda and set the handler to `poll_lambda.lambda_handler`.
+
+Notes:
+
+- Do not commit `lambda_package/` or the `lambda_package.zip` file to source control. Only the scripts (`poll_gtfs_realtime.py` and `poll_lambda.py`) should remain in the repository.
+- Users are expected to build the deployment package themselves by following these instructions (or build it in CI/CD). This keeps dependencies out of the repo and avoids large binary artifacts in source control.
+
+---
+
+## Scheduling with EventBridge (1-Minute Polling)
+
+The Lambda function runs every 1 minute. Note that EventBridge does not support sub-minute schedules (for example, 30-second intervals).
+
+Key scheduling details:
+
+- The Lambda function runs every 1 minute
+- The schedule expression is `rate(1 minute)`
+- EventBridge does not support 30-second schedules
 
 **Schedule Expression:**
 
@@ -183,7 +293,7 @@ The deployed Lambda function
 Once configured:
 
 - Lambda runs automatically
-- Fresh vehicle data is retrieved every 30 seconds
+- Fresh vehicle data is retrieved every 1 minute
 - Logs appear in CloudWatch at the same interval
 
 ---
