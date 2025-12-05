@@ -1,4 +1,4 @@
-# UTA GTFS Realtime Data Polling
+# UTA GTFS Realtime Data Polling & Streaming Pipeline
 
 **Author:** Chase Powers – Polling & Lambda Deployment Lead  
 **Course:** CS6830 – Fundamentals of Data Engineering (Fall 2025)
@@ -7,17 +7,18 @@
 
 ## Overview
 
-This document explains the implementation and deployment of the GTFS Realtime polling service for the Utah Transit Authority (UTA). The purpose of this component is to retrieve live vehicle location data at regular intervals and prepare it for downstream streaming and analytics.
+This document explains the implementation and deployment of the complete GTFS Realtime polling and streaming pipeline for the Utah Transit Authority (UTA). This integrated system retrieves live vehicle location data from the UTA GTFS endpoint, processes it into clean JSON format, and immediately streams it into Amazon Kinesis Data Streams for downstream real-time analytics.
 
-The polling service performs the following functions:
+The complete pipeline performs the following functions:
 
-- Polls the UTA GTFS Realtime Vehicle Positions API
-- Decodes the binary Protocol Buffers feed
-- Extracts key fields for each vehicle
-- Formats the data into JSON-ready structures
- - Runs automatically every 1 minute using AWS Lambda and EventBridge
+- **Polls** the UTA GTFS Realtime Vehicle Positions API every minute
+- **Decodes** the binary Protocol Buffers feed
+- **Extracts** key fields for each vehicle (id, route, position, timestamps)
+- **Formats** the data into clean JSON dictionaries
+- **Streams** all records into Amazon Kinesis Data Streams for downstream consumption
+- **Runs automatically** every 1 minute using AWS Lambda and EventBridge
 
-This component completes Part 3: Polling of the project pipeline. A separate team member is responsible for Part 4: Streaming the Data to Kinesis.
+This component completes both **Part 3 (Polling)** and **Part 4 (Streaming)** of the project pipeline as a unified, production-ready system that continuously feeds fresh vehicle data into the data lake.
 
 ---
 
@@ -300,27 +301,134 @@ Once configured:
 
 ## Role in the Overall Pipeline
 
-This component fulfills Part 3: Polling by:
+This integrated component fulfills both **Part 3 (Polling)** and **Part 4 (Streaming)** by:
 
-- Successfully retrieving live vehicle data
-- Structuring data into JSON-ready records
-- Running automatically without manual intervention
-- Serving as the data source for downstream streaming
+- **Part 3:** Successfully retrieving live vehicle data every minute, decoding the Protobuf format, and extracting key fields
+- **Part 4:** Immediately converting decoded records into JSON and streaming them into Kinesis in batches
+- Running the entire pipeline automatically without manual intervention
+- Providing a continuous, low-latency feed of fresh vehicle positions to downstream consumers
 
-It does not stream data directly to Kinesis. That responsibility belongs to Part 4, handled by another team member.
+The same Lambda function handles both responsibilities in a single execution, ensuring that fresh data moves from the UTA API to Kinesis with minimal delay each minute.
 
 ---
 
 ## Summary
 
-The UTA GTFS Realtime Polling Service:
+The UTA GTFS Realtime Pipeline:
 
-- Uses Python and Protobuf to decode realtime transit data
-- Retrieves live vehicle positions from UTA
-- Extracts and formats key fields
-- Runs locally or in AWS Lambda
-- Executes automatically every minute
-- Produces JSON suitable for streaming and analytics
+- Uses Python and Protobuf to decode realtime transit data from the UTA GTFS endpoint
+- Retrieves live vehicle positions and extracts key fields every minute
+- Formats data into clean JSON dictionaries ready for streaming
+- Runs locally for testing or in AWS Lambda for production
+- Executes automatically every 1 minute via EventBridge scheduling
+- Streams all decoded records directly into Amazon Kinesis Data Streams
+- Provides downstream consumers with fresh, validated vehicle position updates
 
-This completes the required functionality for Polling in the real-time data pipeline.
+This establishes a complete, fully-automated real-time ingestion pipeline that continuously updates the data lake with fresh vehicle positions. The same Lambda function that polls the GTFS feed also handles all streaming to Kinesis, ensuring a seamless, low-latency flow of data from source to consumption.
 
+---
+
+# Streaming GTFS Realtime Data to Amazon Kinesis Data Streams
+---
+
+## Streaming Architecture
+
+1. **EventBridge** triggers the Lambda function every 1 minute.  
+2. The Lambda executes `fetch_realtime_data()` to retrieve and decode the GTFS feed.  
+3. The decoded entities are converted into clean JSON dictionaries.  
+4. The Lambda batches the records and sends them to Kinesis using `put_records`.  
+5. Downstream consumers read JSON from the stream and check correctness and freshness.
+
+This satisfies the requirement:  
+**“Your code should put the decoded data into a nice form (JSON) and send it to a streaming service.”**
+
+---
+
+## Kinesis Data Stream Used
+
+Records are sent to the **`uta_Gtfs_kinesis_stream`** stream: 
+
+Each record includes:
+
+- JSON-encoded GTFS entity data  
+- A partition key based on the vehicle `id`  
+- Timestamps enabling freshness validation  
+
+Example JSON Kinesis record:
+
+```json
+{
+  "id": "1234",
+  "trip_id": "820145",
+  "route_id": "455",
+  "latitude": 40.31,
+  "longitude": -111.70,
+  "vehicle_timestamp": 1712351525,
+  "source_timestamp": 1712351500
+}
+```
+
+## Streaming Implementation
+
+The streaming functionality is implemented in `poll_lambda.py` using the following function:
+
+### `send_to_kinesis(stream_name, data_list)`
+
+This function:
+
+- Converts each GTFS entity dictionary to a JSON string  
+- Encodes JSON into UTF-8 bytes  
+- Uses the entity `id` as the partition key  
+- Sends all records using the efficient `put_records` batch API  
+- Logs failures and Kinesis responses to CloudWatch  
+
+Batching improves throughput and ensures all entities are transmitted each minute.
+
+---
+
+## Testing the Streaming Component
+
+To meet the requirement:  
+**“Ensure that you can receive and decode the data from Amazon Kinesis. Check correctness and freshness.”**
+
+###  1. Validate in CloudWatch Logs
+
+Lambda logs will show:
+
+- A tabular print of decoded GTFS data  
+- The results of the Kinesis batch send  
+- Any failed records or API errors  
+
+###  2. Validate in the Kinesis Console
+
+1. Go to **Amazon Kinesis → Data Streams**  
+2. Open `uta_Gtfs_kinesis_stream`  
+3. Use **Data Viewer** to inspect incoming records  
+
+You should see new JSON records every minute.
+
+###  3. Freshness Verification Using Timestamps
+
+Each record contains:
+
+- `vehicle_timestamp` — time vehicle GPS was recorded  
+- `source_timestamp` — GTFS feed timestamp  
+
+Consumers can confirm:
+
+- Records are recent  
+- Data advances each minute  
+- No stale or lagging updates  
+
+---
+
+## Role in the Overall Pipeline
+
+This streaming component completes Part 4 by:
+
+- Sending structured JSON GTFS data into Kinesis  
+- Enabling real-time downstream analytics  
+- Ensuring freshness validation through timestamps  
+- Operating automatically without manual intervention  
+
+This completes the real-time polling + streaming ingestion stage of the pipeline.
