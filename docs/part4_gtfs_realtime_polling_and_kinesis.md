@@ -187,6 +187,22 @@ This confirms that the Lambda executed and retrieved live data.
 - Dependency installation occurs during packaging or in the CI/CD deployment step; dependency directories (such as `lambda_package/`) are not committed to source control.
 
 ---
+### Requirements File
+
+The deployment process requires a `requirements.txt` file in the project root.  
+This file must list the Python dependencies used by the Lambda function:
+
+requests
+protobuf
+gtfs-realtime-bindings
+
+These dependencies are installed into the deployment package during the build step:
+
+pip install -r requirements.txt -t lambda_package/
+
+Note: AWS Lambda includes `boto3` by default, so it does **not** need to be added to the requirements file.
+
+---
 
 ## Building the Lambda Deployment Package
 
