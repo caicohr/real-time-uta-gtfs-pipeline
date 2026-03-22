@@ -20,7 +20,7 @@ def format_list_to_table_string(entity_list):
     fieldnames = ['id', 'trip_id', 'route_id', 'latitude', 'longitude', 'vehicle_timestamp', 'source_timestamp']
     output = io.StringIO()
     # Use tab-delimited format for neat printing in logs
-    writer = csv.DictWriter(output, fieldnames=fieldnames, delimiter='\t', extrasaction='ignore') 
+    writer = csv.DictWriter(output, fieldnames=fieldnames, delimiter='t', extrasaction='ignore') 
     
     writer.writeheader()
     writer.writerows(entity_list)

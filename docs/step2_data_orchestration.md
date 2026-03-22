@@ -18,7 +18,7 @@ We maintain two versions of the DAG code to handle the credential differences be
 
 In this approach, we provision a lightweight Linux server to host the Airflow Scheduler and Web Server manually.
 
-#### 1\. Infrastructure Setup
+#### 1. Infrastructure Setup
 
 1.  **Launch Instance:**
       * **Service:** Amazon EC2
@@ -28,7 +28,7 @@ In this approach, we provision a lightweight Linux server to host the Airflow Sc
 2.  **Connect:**
       * SSH into the instance using EC2 Instance Connect.
 
-#### 2\. Environment Configuration
+#### 2. Environment Configuration
 
 Run the following commands in the EC2 terminal to install Airflow and set up the database.
 
@@ -49,7 +49,7 @@ airflow db migrate
 airflow users create --username admin --role Admin --email admin@example.com --firstname Student --lastname User
 ```
 
-#### 3\. Pipeline Deployment
+#### 3. Pipeline Deployment
 
   * **Code Source:** `dags/uta_gtfs_pipeline_ec2.py`
   * **Configuration:** We use `aws_conn_id=None` to force Airflow to use the EC2 Instance Profile.
@@ -59,7 +59,7 @@ airflow users create --username admin --role Admin --email admin@example.com --f
     airflow dags test uta_gtfs_pipeline 2025-11-20
     ```
 
-#### 4\. Trade-offs (Why we moved away from this)
+#### 4. Trade-offs (Why we moved away from this)
 
   * **Resource Constraints:** The `t2.micro` instance (1GB RAM) struggles with the latest Airflow 3.0+ scheduler, leading to "Out of Memory" crashes.
   * **Database Locking:** The default SQLite database forces the use of `SequentialExecutor`, which prevents parallel task execution and can cause scheduler hangs during high load.
@@ -72,7 +72,7 @@ airflow users create --username admin --role Admin --email admin@example.com --f
 
 This strategy uses the official AWS managed service. We selected this as our final implementation because it handles scaling, patching, and scheduler reliability automatically.
 
-#### 1\. Prerequisites (S3 Setup)
+#### 1. Prerequisites (S3 Setup)
 
 1.  **Create S3 Bucket:** Create a dedicated bucket (e.g., `uta-airflow-dags`) with **Versioning Enabled**.
 2.  **Code Selection:**
@@ -80,7 +80,7 @@ This strategy uses the official AWS managed service. We selected this as our fin
       * **Configuration Note:** Operators use `aws_conn_id='aws_default'`. MWAA automatically injects the Execution Role credentials into this default connection.
 3.  **Upload DAG:** Upload the file to the `dags/` folder in S3.
 
-#### 2\. Environment Creation
+#### 2. Environment Creation
 
 1.  **Navigate to MWAA:** Go to the **Amazon MWAA** console.
 2.  **Create Environment:**
@@ -89,7 +89,7 @@ This strategy uses the official AWS managed service. We selected this as our fin
       * **Network:** Select the VPC, two private subnets, and "Public Network" for Web Server access.
 3.  **Create:** (Provisioning takes approx. 20 minutes).
 
-#### 3\. Permission Configuration (Crucial Step)
+#### 3. Permission Configuration (Crucial Step)
 
 By default, the MWAA Execution Role cannot access Glue or Lambda.
 
@@ -99,7 +99,7 @@ By default, the MWAA Execution Role cannot access Glue or Lambda.
       * `AWSLambda_FullAccess`
 3.  **Verification:** We verified this by clearing the `catalog_data` task, which transitioned from `ResourceNotFoundException` to **Success**.
 
-#### 4\. Deployment & Updates
+#### 4. Deployment & Updates
 
   * **Continuous Delivery:** We simply upload a new Python file to the S3 bucket. MWAA detects the change and updates the scheduler within 30 seconds automatically.
   * **Verification:** We updated the schedule to `19:40 UTC` (12:40 PM MST) and verified the DAG triggered automatically at the correct time.
@@ -116,4 +116,4 @@ We selected **Strategy B (MWAA)** as our final implementation for this project.
 2.  **Production Readiness:** MWAA provided a stable, managed environment that executed the DAGs flawlessly once IAM permissions were configured.
 3.  **Operational Overhead:** MWAA removed the need to manually restart the scheduler daemon or debug process locks, allowing us to focus entirely on the pipeline logic.
 
-While EC2 is cheaper (\~$0.01/hr vs ~$0.49/hr), the engineering time required to maintain a stable self-hosted Airflow instance outweighs the infrastructure savings for this production-critical pipeline.
+While EC2 is cheaper (~$0.01/hr vs ~$0.49/hr), the engineering time required to maintain a stable self-hosted Airflow instance outweighs the infrastructure savings for this production-critical pipeline.
