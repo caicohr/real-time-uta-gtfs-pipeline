@@ -204,16 +204,16 @@ zip -r deploy_package.zip .
 
 ```bash
 # 1. Upload Code
-aws lambda update-function-code \
-    --function-name uta-polling-v2 \
+aws lambda update-function-code 
+    --function-name uta-polling-v2 
     --zip-file fileb://deploy_package.zip
 
 # 2. Update Configuration (Critical Fix)
 # - Sets Handler to 'poll_lambda.lambda_handler' (instead of default lambda_function.lambda_handler)
 # - Increases Timeout to 30 seconds
-aws lambda update-function-configuration \
-    --function-name uta-polling-v2 \
-    --handler poll_lambda.lambda_handler \
+aws lambda update-function-configuration 
+    --function-name uta-polling-v2 
+    --handler poll_lambda.lambda_handler 
     --timeout 30
 ```
 
@@ -429,12 +429,12 @@ docker build -t uta-dashboard .
 
 ```bash
 # 2. Run with credentials (replace ... with your real values)
-docker run --rm -it \
-  -p 8501:8501 \
-  -e AWS_ACCESS_KEY_ID="ASIA..." \
-  -e AWS_SECRET_ACCESS_KEY="wJalr..." \
-  -e AWS_SESSION_TOKEN="IQoJ..." \
-  -e AWS_DEFAULT_REGION="us-east-1" \
+docker run --rm -it 
+  -p 8501:8501 
+  -e AWS_ACCESS_KEY_ID="ASIA..." 
+  -e AWS_SECRET_ACCESS_KEY="wJalr..." 
+  -e AWS_SESSION_TOKEN="IQoJ..." 
+  -e AWS_DEFAULT_REGION="us-east-1" 
   uta-dashboard
 ```
 

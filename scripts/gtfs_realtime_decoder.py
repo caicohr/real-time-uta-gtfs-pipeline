@@ -10,10 +10,10 @@ from google.protobuf.json_format import MessageToDict
 TARGET_AGENCY = os.environ.get('AGENCY', 'UTA')
 
 if TARGET_AGENCY == 'MBTA':
-    print("\n[INFO] Target: MBTA (Boston) - Fallback Mode")
+    print("n[INFO] Target: MBTA (Boston) - Fallback Mode")
     URL = "https://cdn.mbta.com/realtime/VehiclePositions.pb"
 else:
-    print("\n[INFO] Target: UTA (Utah) - Primary")
+    print("n[INFO] Target: UTA (Utah) - Primary")
     URL = "https://apps.rideuta.com/tms/gtfs/Vehicle"
 
 OUTPUT_DIR = "/data/GTFS_realtime"

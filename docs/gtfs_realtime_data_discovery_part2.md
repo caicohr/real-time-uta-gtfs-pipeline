@@ -7,7 +7,7 @@
 
 -----
 
-## 1\. GTFS Realtime Specifications Overview
+## 1. GTFS Realtime Specifications Overview
 
 ### 1.1 What is GTFS Realtime?
 
@@ -29,7 +29,7 @@ Unlike most modern web APIs that use JSON or XML, GTFS Realtime uses **Protocol 
 
 -----
 
-## 2\. Data Description & Schema (Data Dictionary)
+## 2. Data Description & Schema (Data Dictionary)
 
 The GTFS Realtime schema is hierarchical. The root element is always a `FeedMessage`, which contains metadata and a list of entities. The "Tables" below represent the nested message objects defined in the standard `gtfs-realtime.proto` schema.
 
@@ -69,7 +69,7 @@ Represents the physical location and status of a transit vehicle.
 | Field | Type | Description |
 | :--- | :--- | :--- |
 | `trip` | `TripDescriptor` | The trip this vehicle is currently serving. |
-| `vehicle` | `VehicleDescriptor` | Physical identifier of the bus/train (e.g., Bus \#405). |
+| `vehicle` | `VehicleDescriptor` | Physical identifier of the bus/train (e.g., Bus #405). |
 | `position` | `Position` | Lat/Lon/Bearing/Speed data. |
 | `current_stop_sequence` | `int32` | The stop sequence index the vehicle is currently at. |
 | `current_status` | `enum` | `INCOMING_AT`, `STOPPED_AT`, or `IN_TRANSIT_TO`. |
@@ -86,7 +86,7 @@ This section defines how the Realtime objects link to the Static CSV files (Fore
 
 -----
 
-## 3\. Data Discovery Report
+## 3. Data Discovery Report
 
 *Covers: Public Feed Verification and Inspection*
 
@@ -151,7 +151,7 @@ LIMIT 10;
 
 -----
 
-## 4\. Docker Reproduction Instructions
+## 4. Docker Reproduction Instructions
 
 *Covers: Containerized Decoding & Inspection Environment*
 
@@ -187,10 +187,10 @@ from google.protobuf.json_format import MessageToDict
 TARGET_AGENCY = os.environ.get('AGENCY', 'UTA')
 
 if TARGET_AGENCY == 'MBTA':
-    print("\n[INFO] Target: MBTA (Boston) - Fallback Mode")
+    print("n[INFO] Target: MBTA (Boston) - Fallback Mode")
     URL = "https://cdn.mbta.com/realtime/VehiclePositions.pb"
 else:
-    print("\n[INFO] Target: UTA (Utah) - Primary")
+    print("n[INFO] Target: UTA (Utah) - Primary")
     URL = "https://apps.rideuta.com/tms/gtfs/Vehicle"
 
 OUTPUT_DIR = "/data/GTFS_realtime"
@@ -249,20 +249,20 @@ We use a **Python base image** and manually install the correct **DuckDB CLI bin
 FROM python:3.9-slim
 
 # 1. Install System Tools (wget/unzip) and Python Libraries
-RUN apt-get update && apt-get install -y wget unzip \
-    && rm -rf /var/lib/apt/lists/* \
+RUN apt-get update && apt-get install -y wget unzip 
+    && rm -rf /var/lib/apt/lists/* 
     && pip install --no-cache-dir requests gtfs-realtime-bindings protobuf
 
 # 2. Install DuckDB CLI (Architecture Aware)
-RUN set -e; \
-    ARCH=$(uname -m); \
-    if [ "$ARCH" = "aarch64" ]; then \
-        URL="https://github.com/duckdb/duckdb/releases/download/v1.1.3/duckdb_cli-linux-aarch64.zip"; \
-    else \
-        URL="https://github.com/duckdb/duckdb/releases/download/v1.1.3/duckdb_cli-linux-amd64.zip"; \
-    fi; \
-    wget "$URL" -O duckdb.zip && unzip duckdb.zip \
-    && mv duckdb /usr/local/bin/ && chmod +x /usr/local/bin/duckdb \
+RUN set -e; 
+    ARCH=$(uname -m); 
+    if [ "$ARCH" = "aarch64" ]; then 
+        URL="https://github.com/duckdb/duckdb/releases/download/v1.1.3/duckdb_cli-linux-aarch64.zip"; 
+    else 
+        URL="https://github.com/duckdb/duckdb/releases/download/v1.1.3/duckdb_cli-linux-amd64.zip"; 
+    fi; 
+    wget "$URL" -O duckdb.zip && unzip duckdb.zip 
+    && mv duckdb /usr/local/bin/ && chmod +x /usr/local/bin/duckdb 
     && rm duckdb.zip
 
 WORKDIR /app
@@ -271,7 +271,7 @@ RUN mkdir /data
 
 # 3. Pipeline: Decode -> Open Interactive Shell
 # Using ';' ensures DuckDB opens even if the fetch script encounters an error
-CMD /bin/bash -c "python gtfs_realtime_decoder.py; echo '\n✅ Opening DuckDB Shell...\n'; /usr/local/bin/duckdb"
+CMD /bin/bash -c "python gtfs_realtime_decoder.py; echo 'n✅ Opening DuckDB Shell...n'; /usr/local/bin/duckdb"
 ```
 
 ### 4.4 Execution
@@ -294,7 +294,7 @@ docker run --rm -it -e AGENCY=MBTA -v "$(pwd)/data":/data gtfs-realtime
 
 -----
 
-## 5\. References
+## 5. References
 
   * **[UTA Public GTFS Feed](https://apps.rideuta.com/tms/gtfs/Vehicle)** - Official public endpoint.
   * **[MBTA Realtime Feed](https://cdn.mbta.com/realtime/VehiclePositions.pb)** - Fallback endpoint.
